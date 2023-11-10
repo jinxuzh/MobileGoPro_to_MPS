@@ -7,7 +7,7 @@ extract_images.py to get images from videos for Metashape reconstruction.
 
 reconstruction_Metashape.py to run Metashape reconstruction and save the results. 
 
-transform_dynamic_camera_to_MPS.py to estimate the T_mps_metashape and T_aria_gp
+transform_dynamic_camera_to_MPS.py to estimate the T_mps_metashape and T_gp_aria
 
 project_hand_annotation_to_Aria.py to check the estimated parameters by projecting hand annotations to the head mounted GoPro images. 
 
