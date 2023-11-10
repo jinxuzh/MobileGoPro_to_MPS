@@ -1,4 +1,14 @@
 # MobileGoPro_to_MPS
+
+# Data
+For the take we want to work on, we need the corresponding:
+- raw vrs file.
+- trajectory (csv file) reconstruction results from MPS.
+- multiview synchronized mp4 files
+- GoPro walkaround video
+- (for visualization) hand annotation
+- (for visualization) camera pose file corresponding to the hand annotation
+
 ## Parameters
 Update folder/file path in config.py
 
