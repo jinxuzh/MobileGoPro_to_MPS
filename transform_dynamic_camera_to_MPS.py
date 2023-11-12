@@ -170,9 +170,17 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
             cam_pose_metashape[tgt_name] = load_metashape_cam_pose(metashape_output_pth, tgt_name)
 
         # read exo camera pose in MPS from gopro_calibs.csv
-        # TODO: read from file
-        gp_camera_params = [1776.94812, 1776.94812, 1920, 1080, 0.036902, 0.057131, -0.057154, 0.018458]
-        T_gp_world_cam = [0.405604, -3.483128, 0.322028, -0.7001, 0.502369, -0.281188, 0.422396]
+        gopro_calib_path = os.path.join(args.vrs_folder, '../trajectory/gopro_calibs.csv')
+        assert os.path.exists(gopro_calib_path), f"{gopro_calib_path} doesn't exist. Please check if trajectory data is downloaded."
+        calib_df = pd.read_csv(gopro_calib_path)
+        exo_gp_calib = calib_df.loc[calib_df['cam_uid'] == args.exo_cam]
+        # Intrinsics
+        intri_index = [f"intrinsics_{idx}" for idx in range(8)]
+        gp_camera_params = exo_gp_calib[intri_index].values.flatten().tolist()
+        # Extrinsics
+        extri_index = ['tx_world_cam','ty_world_cam','tz_world_cam','qx_world_cam','qy_world_cam','qz_world_cam','qw_world_cam']
+        T_gp_world_cam = exo_gp_calib[extri_index].values.flatten().tolist()
+
         R_gp_world_cam = Rotation.from_quat(T_gp_world_cam[3:]).as_matrix()
         T_gp_world_cam_matrix = transform_from_rotm_tr(R_gp_world_cam, T_gp_world_cam[:3])
         gp_camera_intrinsics_projection = calibration.CameraProjection(calibration.CameraModelType.KANNALA_BRANDT_K3,
