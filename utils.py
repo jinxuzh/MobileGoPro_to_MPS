@@ -1,17 +1,42 @@
 import os
 import numpy as np
 import cv2 as cv2
+import av
+import torch
+import math
+from tqdm import tqdm
+from torchaudio.io import StreamReader
+from torchvision.transforms import Resize
+from typing import Optional
 
-def decode_video_to_images(video_path, image_dir, im_width, im_height, framerate, prefix=None):
+
+def decode_video_to_images(video_path, image_dir, im_width, im_height, framerate, prefix=None, subclip_frame_num=None):
 
     os.makedirs(image_dir, exist_ok=True)
-    if prefix is not None:
-        cmd = 'ffmpeg -i {} -vf scale={}:{} -r {} {}/{}_%06d.png'.format(
-            video_path, im_width, im_height, framerate, image_dir, prefix)
+    if subclip_frame_num:
+        # Read in video
+        reader = PyAvReader(
+            path=video_path,
+            resize=(im_height,im_width),
+            mean=None,
+            frame_window_size=1,
+            stride=1,
+            gpu_idx=-1,
+            )
+        for idx in tqdm(subclip_frame_num):
+            out_path = os.path.join(image_dir, f"{prefix}_{idx:06d}.jpg") if prefix else os.path.join(image_dir, f"{idx:06d}.jpg")
+            if not os.path.exists(out_path):
+                frame = reader[idx][0].cpu().numpy()
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                assert cv2.imwrite(out_path, frame), out_path
     else:
-        cmd = 'ffmpeg -i {} -vf scale={}:{} -r {} {}/%06d.png'.format(
-            video_path, im_width, im_height, framerate, image_dir)
-    os.system(cmd)
+        if prefix is not None:
+            cmd = 'ffmpeg -i {} -vf scale={}:{} -r {} {}/{}_%06d.jpg'.format(
+                video_path, im_width, im_height, framerate, image_dir, prefix)
+        else:
+            cmd = 'ffmpeg -i {} -vf scale={}:{} -r {} {}/%06d.jpg'.format(
+                video_path, im_width, im_height, framerate, image_dir)
+        os.system(cmd)
 
 def load_metashape_cam_pose(metashape_output_pth, tgt_name):
 
@@ -163,3 +188,92 @@ def visualize_hand(im, hand2D):
                           [0, 0, 255], 1)
 
     return im
+
+
+def get_video_meta(path):
+    with av.open(path) as cont:
+        n_frames = cont.streams[0].frames
+        codec = cont.streams[0].codec.name
+        tb = cont.streams[0].time_base
+
+        all_pts = []
+        for x in cont.demux(video=0):
+            if x.pts is None:
+                continue
+            all_pts.append(x.pts)
+
+        assert len(all_pts) == n_frames
+        return {
+            "all_pts": sorted(all_pts),
+            "codec": codec,
+            "tb": tb,
+        }
+    
+
+class StridedReader:
+    def __init__(self, path, stride, frame_window_size):
+        self.path = path
+        self.meta = get_video_meta(path)
+        self.all_pts = self.meta["all_pts"]
+        self.stride = stride
+        self.frame_window_size = frame_window_size
+        if self.stride == 0:
+            self.stride = self.frame_window_size
+
+    def __getitem__(self, _: int) -> torch.Tensor:
+        raise AssertionError("Not implemented")
+
+    def __len__(self):
+        return int(
+            math.ceil((len(self.all_pts) - self.frame_window_size) / self.stride)
+        )
+    
+
+class PyAvReader(StridedReader):
+    def __init__(
+        self,
+        path: str,
+        resize: tuple[int, int],
+        mean: Optional[torch.Tensor],
+        frame_window_size: int,
+        stride: int,
+        gpu_idx: int,
+    ):
+        super().__init__(path, stride, frame_window_size)
+
+        if gpu_idx >= 0:
+            raise AssertionError("GPU decoding not support for pyav")
+
+        self.mean = mean
+        self.resize = Resize(resize) if resize is not None else None
+        self.path = path
+        self.create_underlying_cont(gpu_idx)
+
+    def create_underlying_cont(self, gpu_id):
+        self.cont = av.open(self.path)
+
+    def __getitem__(self, idx: int) -> torch.Tensor:
+        frame_i = self.stride * idx
+        frame_j = frame_i + self.frame_window_size
+        assert frame_i >= 0 and frame_j < len(self.all_pts)
+
+        frame_i_pts = self.all_pts[frame_i]
+        frame_j_pts = self.all_pts[frame_j]
+        # self.cont.streams.video[0].seek(frame_i_pts)
+        self.cont.seek(frame_i_pts, stream=self.cont.streams.video[0])
+        fs = []
+        for f in self.cont.decode(video=0):
+            # print(f.pts)
+            if f.pts < frame_i_pts:
+                continue
+            if f.pts >= frame_j_pts:
+                break
+            fs.append((f.pts, torch.tensor(f.to_ndarray(format="rgb24"))))
+        fs = sorted(fs, key=lambda x: x[0])
+        ret = torch.stack([x[1] for x in fs]).permute(0,3,1,2) # (B, C, H, W)
+        if self.resize is not None:
+            ret = self.resize(ret)
+        if self.mean is not None:
+            ret -= self.mean
+        ret = ret.permute(0,2,3,1)
+        return ret

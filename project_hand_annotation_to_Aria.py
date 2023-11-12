@@ -2,7 +2,7 @@ import os
 import numpy as np
 import json
 import cv2 as cv2
-
+from tqdm import tqdm
 from config import get_parameters
 from utils import visualize_hand_crop, visualize_hand
 
@@ -32,8 +32,12 @@ hand_link_color = [[255,125,0], [255,125,0], [255,125,0], [255,125,0],
                    [0,255,0], [0,255,0], [0,255,0], [0,255,0]]
 
 if __name__ == '__main__':
+    ######################################
+    TAKE = None # MODIFY e.g. "upenn_0718_Violin_2_5"
+    ######################################
 
-    args = get_parameters('upenn_0718_Violin_2_5')
+    args = get_parameters(TAKE)
+    capture_name = '_'.join(TAKE.split('_')[:-1])
 
     annotation_folder = os.path.join(args.annotation_folder, 'annotation')
     cam_pose_folder = os.path.join(args.annotation_folder, 'camera_pose')
@@ -41,10 +45,15 @@ if __name__ == '__main__':
 
     annotation_files = os.listdir(annotation_folder)
 
-    save_dir = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    save_dir = os.path.join(args.work_dir, capture_name, args.take, 'outputs', 'Metashape')
     save_name = 'transformation_MPS_gp_aria.json'
     with open(os.path.join(save_dir, save_name), 'r') as f:
         T_mps_gp_aria = np.array(json.load(f))
+
+    aria_playing_vis_dir = os.path.join(save_dir, '../aria_hand_annot')
+    os.makedirs(aria_playing_vis_dir, exist_ok=True)
+    gp_playing_vis_dir = os.path.join(save_dir, '../gopro_hand_annot')
+    os.makedirs(gp_playing_vis_dir, exist_ok=True)
 
     # from metashape calibration
     # TODO: read from file
@@ -62,7 +71,7 @@ if __name__ == '__main__':
         take_uid = annot[list(annot.keys())[0]][0]['metadata']['take_uid']
         take_name = annot[list(annot.keys())[0]][0]['metadata']['take_name']
 
-        if not take_name == 'upenn_0718_Violin_2_5':
+        if not take_name == TAKE:
             continue
 
         cam_pose_file = os.path.join(cam_pose_folder, file)
@@ -73,7 +82,7 @@ if __name__ == '__main__':
             with open(cam_pose_file) as f:
                 cam_pose = json.load(f)
 
-        for item in annot.keys():
+        for item in tqdm(annot.keys()):
             hand_3D = np.zeros((42, 5))  # x, y, z, 1, valid
             for idx, joint in enumerate(both_hand):
                 if joint in annot[item][0]['annotation3D'].keys():
@@ -88,6 +97,7 @@ if __name__ == '__main__':
             hand_3D_repro = K_aria @ T_mps_aria_world @ hand_3D[:, :4].T
             hand_3D_repro = hand_3D_repro[:2, :].T / hand_3D_repro[2:, :].T
 
+            # Project onto aria image
             hand_3D_repro = np.concatenate([hand_3D_repro, hand_3D[:, 4:]], axis=-1)
             hand_3D_repro = np.nan_to_num(hand_3D_repro)
             im_name = os.path.join(annotation_image_folder, take_name, '{:06d}.jpg'.format(int(item)))
@@ -96,12 +106,9 @@ if __name__ == '__main__':
             hand_vis = visualize_hand(im, hand_3D_repro[:21, :2])
             hand_vis = visualize_hand(hand_vis, hand_3D_repro[21:, :2])
             hand_vis = cv2.rotate(hand_vis, cv2.ROTATE_90_CLOCKWISE)
+            cv2.imwrite(os.path.join(aria_playing_vis_dir, '{:06d}.jpg'.format(int(item))), hand_vis)
 
-            hand_vis_dir = os.path.join(save_dir, '../aria_hand_annot')
-            os.makedirs(hand_vis_dir, exist_ok=True)
-            cv2.imwrite(os.path.join(hand_vis_dir, '{:06d}.png'.format(int(item))), hand_vis)
-
-            # project to gopro
+            # Project onto head-mounted GoPro image
             T_mps_aria_world = np.concatenate([T_mps_aria_world, np.array([[0, 0, 0, 1]])])
             hand_3D_repro = T_mps_gp_aria[:3, :] @ T_mps_aria_world @ hand_3D[:, :4].T
             hand_3D_repro = hand_3D_repro[:2, :].T / hand_3D_repro[2:, :].T
@@ -109,12 +116,8 @@ if __name__ == '__main__':
                                                               np.array(D_gp05))
             hand_3D_repro_distort = np.nan_to_num(hand_3D_repro_distort)
 
-            im_name = os.path.join(args.video_folder, 'gp05', 'playing_gopro_{:06d}.png'.format(int(item)))
+            im_name = os.path.join(args.work_dir, capture_name, args.take, f"vis_gp-playing-{args.mobile_cam}", 'playing_gopro_{:06d}.jpg'.format(int(item)))
             im = cv2.imread(im_name)
             hand_vis = visualize_hand(im, hand_3D_repro_distort[:21, 0, :2])
             hand_vis = visualize_hand(hand_vis, hand_3D_repro_distort[21:, 0, :2])
-            # cv2.imwrite(os.path.join(save_dir, 'gopro_proj.png'), hand_crop)
-
-            hand_vis_dir = os.path.join(save_dir, '../gopro_hand_annot')
-            os.makedirs(hand_vis_dir, exist_ok=True)
-            cv2.imwrite(os.path.join(hand_vis_dir, '{:06d}.png'.format(int(item))), hand_vis)
+            cv2.imwrite(os.path.join(gp_playing_vis_dir, '{:06d}.jpg'.format(int(item))), hand_vis)

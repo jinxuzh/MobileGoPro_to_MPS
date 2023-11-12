@@ -6,6 +6,7 @@ import json
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 import rerun as rr
+from tqdm import tqdm
 
 from projectaria_tools.core import data_provider, calibration
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
@@ -16,7 +17,7 @@ from utils import load_metashape_cam_pose_walkaround_aria, load_metashape_cam_po
 from aria_alignment_helper import RansacEstimator, Solver, transform_from_rotm_tr
 
 def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False):
-
+    capture_name = '_'.join(args.take.split('_')[:-1])
     ################# Fetch walkaround aria results from MPS #################
     df_aria = pd.DataFrame()  # initialize dataframe for storing everything
     aria_vrs_pth = os.path.join(args.vrs_folder, 'aria01.vrs')
@@ -35,7 +36,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
     abs_time = []
     abs_frame = []
     save_visualization_image = False
-    walking_aria_img_dir = os.path.join(args.video_folder, 'walkaround_aria')
+    walking_aria_img_dir = os.path.join(args.work_dir, capture_name, 'aria_images', 'aria_walkaround')
     walking_aria_img_list = sorted(os.listdir(walking_aria_img_dir))
     for image_file in walking_aria_img_list:
         frame_id = int(image_file.split('-')[2]) - 1
@@ -69,7 +70,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
     df_aria.head(5)
 
     ################# Fetch walkaround aria results from Metashape #################
-    metashape_output_pth = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    metashape_output_pth = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
     assert os.path.exists(metashape_output_pth)
 
     tgt_file = 'walkaround_aria'  # aria only
@@ -97,7 +98,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
 
     ################# Fit a transformation between MPS coordinate system and Metashape coordinate system #################
     if visualize_cam_pose:
-        rr.init("MPS camera pose mps metashape {}".format('upenn_0718_Violin_2_5'))
+        rr.init("MPS camera pose mps metashape {}".format(args.take))
         rr.spawn()
         K = np.array([[1.5, 0, 1.5], [0, 1.5, 1.5], [0, 0, 1]])
 
@@ -178,10 +179,11 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
                                                                        gp_camera_params)
 
         # project camera center
-        gp01_image_dir = os.path.join(args.video_folder, 'gp01')
-        vis_folder = os.path.join(args.video_folder, 'gp01_vis')
+        gp01_image_dir = os.path.join(args.work_dir, capture_name, TAKE, f"vis_exo-playing-{args.exo_cam}/original_img")
+        vis_folder = os.path.join(os.path.dirname(gp01_image_dir), 'gp01_vis')
         os.makedirs(vis_folder, exist_ok=True)
-        for file in sorted(os.listdir(gp01_image_dir)):
+        print("Saving visualization of aria+gp position in MPS projected onto GP01")
+        for file in tqdm(sorted(os.listdir(gp01_image_dir))):
             im = cv2.imread(os.path.join(gp01_image_dir, file))
 
             # project camera locations location
@@ -199,7 +201,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
 
 def transformation_MPS_gp_aria(args, T_mps_metashape, visualize_cam_pose=False):
 
-    metashape_output_pth = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    metashape_output_pth = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
     cam_pose_metashape = {}
     for tgt_name in ['playing_aria', 'playing_gopro']:
         cam_pose_metashape[tgt_name] = load_metashape_cam_pose(metashape_output_pth, tgt_name)
@@ -207,7 +209,7 @@ def transformation_MPS_gp_aria(args, T_mps_metashape, visualize_cam_pose=False):
     # form pairs of gopro, aria pose in metashape, then transform it to MPS frame
     # fit a transformation between aria and gopro for each frame
     if visualize_cam_pose:
-        rr.init("MPS logging {}".format('upenn_0718_Violin_2_5'))
+        rr.init("MPS logging {}".format(args.take))
         rr.spawn()
         K = np.array([[1.5, 0, 1.5], [0, 1.5, 1.5], [0, 0, 1]])
 
@@ -242,27 +244,28 @@ def transformation_MPS_gp_aria(args, T_mps_metashape, visualize_cam_pose=False):
 
 
 if __name__ == '__main__':
+    ######################################
+    TAKE = None # MODIFY e.g. "upenn_0718_Violin_2_5"
+    ######################################
 
-    args = get_parameters('upenn_0718_Violin_2_5')
+    args = get_parameters(TAKE)
+    capture_name = '_'.join(TAKE.split('_')[:-1])
 
     # fit a transformation between MPS coordinate system and Metashape coordinate system
     T_mps_metashape = transformation_MPS_Metashape(args, visualize=False)
-    save_dir = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
     save_name = 'transformation_MPS_Metashape.json'
     with open(os.path.join(save_dir, save_name), 'w') as f:
         json.dump(T_mps_metashape.tolist(), f, indent=4)
 
     # fit a transformation between dynamic gopro and aria rgb in mps coordinate system
-    save_dir = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
     save_name = 'transformation_MPS_Metashape.json'
     with open(os.path.join(save_dir, save_name), 'r') as f:
         T_mps_metashape = np.array(json.load(f))
 
     T_mps_gp_aria = transformation_MPS_gp_aria(args, T_mps_metashape)
-    save_dir = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
     save_name = 'transformation_MPS_gp_aria.json'
     with open(os.path.join(save_dir, save_name), 'w') as f:
         json.dump(T_mps_gp_aria.tolist(), f, indent=4)
-
-
-

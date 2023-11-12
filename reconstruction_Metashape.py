@@ -9,9 +9,10 @@ def get_parameters(take_name):
     parser = argparse.ArgumentParser('Register mobile gopro to aria MPS coordinate system')
 
     # path
-    parser.add_argument('--base_folder', type=str, default='/media/shan/Volume2/Ego4D-egoexo-10-18/')
-    parser.add_argument('--calib_dir', type=str, default='/media/shan/Volume1/Data/Music/calib_files',
+    parser.add_argument('--base_folder', type=str, default='/mnt/volume2/Data/Ego4D')
+    parser.add_argument('--calib_dir', type=str, default='/mnt/8tbvol11/register_mobileGoPro_Ego4D/calib_files',
                         help="folder for calibration files")
+    parser.add_argument('--work_dir', type=str, default='/mnt/8tbvol11/register_mobileGoPro_Ego4D')
 
     # image resolution
     parser.add_argument('--mobile_width', type=int, default=1920,
@@ -54,9 +55,11 @@ def get_parameters(take_name):
 
     return args
 
-def reconstruction(doc, image_dir, calib_file, save_dir, save_name, sensor_label, image_prefix, fix_calib, save_calib, save_campose):
-
-    chunk = doc.chunk
+def reconstruction(doc, image_dir, calib_file, save_dir, save_name, sensor_label, image_prefix, fix_calib, save_calib, save_campose, build_world=False):
+    if build_world:
+        chunk = doc.addChunk()
+    else:
+        chunk = doc.chunk
 
     print('\t Building environment')
     # prepare file list
@@ -132,55 +135,57 @@ def save_cam_pose(camera_name, label_flag, chunk, save_dir):
 
 
 if __name__ == '__main__':
+    ######################################
+    TAKE = None # MODIFY e.g. "upenn_0718_Violin_2_5"
+    ######################################
 
-    args = get_parameters('upenn_0718_Violin_2_5')
+    args = get_parameters(TAKE)
+    capture_name = '_'.join(TAKE.split('_')[:-1])
 
-    save_dir = os.path.join(args.video_folder, '../', 'outputs', 'Metashape')
+    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
     os.makedirs(save_dir, exist_ok=True)
-    save_name = '{}.psx'.format('upenn_0718_Violin_2_5')
+    save_name = '{}.psx'.format(TAKE)
     save_file = os.path.join(save_dir, save_name)
 
     ################# Build 3D world from gopro walkaround #################
-    image_dir = os.path.join(args.video_folder, 'mobile')
-    assert os.path.exists(image_dir), image_dir
-    calib_file = os.path.join(args.calib_dir, '{}.xml'.format(args.mobile_cam))
-    assert os.path.exists(calib_file), calib_file
+    gp_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'gp_walkaround')
+    assert os.path.exists(gp_mobile_image_dir), gp_mobile_image_dir
+    gp_mobile_calib_file = os.path.join(args.calib_dir, '{}.xml'.format(args.mobile_cam))
+    assert os.path.exists(gp_mobile_calib_file), gp_mobile_calib_file
 
-    doc = Metashape.app.document
-    reconstruction(doc, image_dir, calib_file, save_dir, save_name,
-                   sensor_label='mobile_gp', image_prefix=None, fix_calib=False, save_calib=True, save_campose=False)
+    doc = Metashape.Document()
+    reconstruction(doc, gp_mobile_image_dir, gp_mobile_calib_file, save_dir, save_name,
+                   sensor_label='mobile_gp', image_prefix=None, fix_calib=False, save_calib=True, save_campose=False, build_world=True)
 
     ################# Register walkarond aria frames and calibrate aria camera #################
-    video_dir = os.path.join(args.video_folder, 'walkaround_aria')
-    assert os.path.exists(video_dir), video_dir
-    calib_file = os.path.join(args.calib_dir, 'aria01_new.xml')
-    assert os.path.exists(calib_file), calib_file
+    aria_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'aria_images', 'aria_walkaround')
+    assert os.path.exists(aria_mobile_image_dir), aria_mobile_image_dir
+    aria_mobile_calib_file = os.path.join(args.calib_dir, 'aria01_new.xml')
+    assert os.path.exists(aria_mobile_calib_file), aria_mobile_calib_file
 
-    doc = Metashape.app.document
+    doc = Metashape.Document()
     doc.open(save_file)
-    reconstruction(doc, video_dir, calib_file, save_dir, save_name,
+    reconstruction(doc, aria_mobile_image_dir, aria_mobile_calib_file, save_dir, save_name,
                    sensor_label='walkaround_aria', image_prefix='214-1', fix_calib=False, save_calib=True, save_campose=True)
 
     ################# Register aria playing frames #################
-    video_dir = os.path.join(args.video_folder, 'playing_aria')
-    assert os.path.exists(video_dir), video_dir
-    calib_file = os.path.join(save_dir, 'walkaround_aria.xml')
-    assert os.path.exists(calib_file), calib_file
+    aria_playing_image_dir = os.path.join(args.work_dir, capture_name, TAKE, 'playing_aria')
+    assert os.path.exists(aria_playing_image_dir), aria_playing_image_dir
+    aria_playing_calib_file = os.path.join(save_dir, 'walkaround_aria.xml')
+    assert os.path.exists(aria_playing_calib_file), aria_playing_calib_file
 
-    doc = Metashape.app.document
+    doc = Metashape.Document()
     doc.open(save_file)
-
-    reconstruction(doc, video_dir, calib_file, save_dir, save_name,
+    reconstruction(doc, aria_playing_image_dir, aria_playing_calib_file, save_dir, save_name,
                    sensor_label='playing_aria', image_prefix='playing_aria', fix_calib=True, save_calib=False, save_campose=True)
 
-    ################# Register aria playing frames #################
-    video_dir = os.path.join(args.video_folder, 'playing_gopro')
-    assert os.path.exists(video_dir), video_dir
-    calib_file = os.path.join(save_dir, 'mobile_gp.xml')
-    assert os.path.exists(calib_file), calib_file
+    ################# Register gp playing frames #################
+    gp_playing_image_dir = os.path.join(args.work_dir, capture_name, TAKE, 'playing_gopro')
+    assert os.path.exists(gp_playing_image_dir), gp_playing_image_dir
+    gp_playing_calib_file = os.path.join(save_dir, 'mobile_gp.xml')
+    assert os.path.exists(gp_playing_calib_file), gp_playing_calib_file
 
-    doc = Metashape.app.document
+    doc = Metashape.Document()
     doc.open(save_file)
-
-    reconstruction(doc, video_dir, calib_file, save_dir, save_name,
+    reconstruction(doc, gp_playing_image_dir, gp_playing_calib_file, save_dir, save_name,
                    sensor_label='playing_gopro', image_prefix='playing_gopro', fix_calib=True, save_calib=False, save_campose=True)
