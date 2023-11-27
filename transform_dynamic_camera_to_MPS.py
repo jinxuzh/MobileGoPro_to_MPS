@@ -36,7 +36,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
     abs_time = []
     abs_frame = []
     save_visualization_image = False
-    walking_aria_img_dir = os.path.join(args.work_dir, capture_name, 'aria_images', 'aria_walkaround')
+    walking_aria_img_dir = os.path.join(args.work_dir, capture_name, 'aria_walkaround', 'aria_walkaround')
     walking_aria_img_list = sorted(os.listdir(walking_aria_img_dir))
     for image_file in walking_aria_img_list:
         frame_id = int(image_file.split('-')[2]) - 1
@@ -70,7 +70,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
     df_aria.head(5)
 
     ################# Fetch walkaround aria results from Metashape #################
-    metashape_output_pth = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
+    metashape_output_pth = os.path.join(args.work_dir, capture_name, 'Metashape')
     assert os.path.exists(metashape_output_pth)
 
     tgt_file = 'walkaround_aria'  # aria only
@@ -89,7 +89,7 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
             file_id = imgs[frame_num]
             metashape_poses.append(poses[file_id])
         else:
-            metashape_poses.append(np.nan)
+            metashape_poses.append(None)
 
     # print("Fetched", len(frame_nums), "for alignment from", len(set(file_nums)), 'video sequences.')
     df_aria['Aria Cropped Frame Number'] = frame_nums
@@ -109,6 +109,8 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
     T_device_RGB = provider.get_device_calibration().get_transform_device_sensor(camera_name)
     for i in range(len(df_aria)):
         T_metashape_world_cam = df_aria.loc[i, 'Aria Pose in Metashape World']
+        if T_metashape_world_cam is None:
+            continue
         point = (T_metashape_world_cam @ np.array([0, 0, 0, 1]))[:3]
         points_metashape.append(point.reshape((1, 3)))
 
@@ -160,59 +162,15 @@ def transformation_MPS_Metashape(args, visualize=False, visualize_cam_pose=False
     print("MSE ransac inliers: {}".format(mse_ransac_inliers))
     print("Scale from Aria to Metashape is", scale_ransac)
 
-    T_mps_metashape = transform_ransac
-
-    # transform playing aria and playing gopro results from Metashape, project to exo gopro camera in MPS, and check
-    if visualize:
-        # read metashape cam pose
-        cam_pose_metashape = {}
-        for tgt_name in ['playing_aria', 'playing_gopro']:
-            cam_pose_metashape[tgt_name] = load_metashape_cam_pose(metashape_output_pth, tgt_name)
-
-        # read exo camera pose in MPS from gopro_calibs.csv
-        gopro_calib_path = os.path.join(args.vrs_folder, '../trajectory/gopro_calibs.csv')
-        assert os.path.exists(gopro_calib_path), f"{gopro_calib_path} doesn't exist. Please check if trajectory data is downloaded."
-        calib_df = pd.read_csv(gopro_calib_path)
-        exo_gp_calib = calib_df.loc[calib_df['cam_uid'] == args.exo_cam]
-        # Intrinsics
-        intri_index = [f"intrinsics_{idx}" for idx in range(8)]
-        gp_camera_params = exo_gp_calib[intri_index].values.flatten().tolist()
-        # Extrinsics
-        extri_index = ['tx_world_cam','ty_world_cam','tz_world_cam','qx_world_cam','qy_world_cam','qz_world_cam','qw_world_cam']
-        T_gp_world_cam = exo_gp_calib[extri_index].values.flatten().tolist()
-
-        R_gp_world_cam = Rotation.from_quat(T_gp_world_cam[3:]).as_matrix()
-        T_gp_world_cam_matrix = transform_from_rotm_tr(R_gp_world_cam, T_gp_world_cam[:3])
-        gp_camera_intrinsics_projection = calibration.CameraProjection(calibration.CameraModelType.KANNALA_BRANDT_K3,
-                                                                       gp_camera_params)
-
-        # project camera center
-        gp01_image_dir = os.path.join(args.work_dir, capture_name, TAKE, f"vis_exo-playing-{args.exo_cam}/original_img")
-        vis_folder = os.path.join(os.path.dirname(gp01_image_dir), 'gp01_vis')
-        os.makedirs(vis_folder, exist_ok=True)
-        print("Saving visualization of aria+gp position in MPS projected onto GP01")
-        for file in tqdm(sorted(os.listdir(gp01_image_dir))):
-            im = cv2.imread(os.path.join(gp01_image_dir, file))
-
-            # project camera locations location
-            for camera_name, c in zip(['playing_aria', 'playing_gopro'], [(0,0,255), (255,0,0)]):
-                if file in cam_pose_metashape[camera_name]['cam_pose'].keys():
-                    point_metashape = (cam_pose_metashape[camera_name]['cam_pose'][file] @ np.array([0, 0, 0, 1])) # T_world_camera * [0,0,0,1]
-                    point_mps_world = T_mps_metashape @ point_metashape
-                    point_mps_gp01 = np.linalg.inv(T_gp_world_cam_matrix) @ point_mps_world
-                    point_2D_gp01 = gp_camera_intrinsics_projection.project(point_mps_gp01[:3])
-                    im = cv2.circle(im, (int(point_2D_gp01[0]), int(point_2D_gp01[1])), 10, c, -1)
-
-            cv2.imwrite(os.path.join(vis_folder, file), im)
-
     return transform_ransac
+
 
 def transformation_MPS_gp_aria(args, T_mps_metashape, visualize_cam_pose=False):
 
-    metashape_output_pth = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
+    metashape_output_pth = os.path.join(args.work_dir, capture_name, 'Metashape')
     cam_pose_metashape = {}
     for tgt_name in ['playing_aria', 'playing_gopro']:
-        cam_pose_metashape[tgt_name] = load_metashape_cam_pose(metashape_output_pth, tgt_name)
+        cam_pose_metashape[tgt_name] = load_metashape_cam_pose(os.path.join(metashape_output_pth, args.take), tgt_name)
 
     # form pairs of gopro, aria pose in metashape, then transform it to MPS frame
     # fit a transformation between aria and gopro for each frame
@@ -245,35 +203,88 @@ def transformation_MPS_gp_aria(args, T_mps_metashape, visualize_cam_pose=False):
 
                 rr.log_line_segments('hand/link/{}'.format(file), [t_gp, t_aria], color=[255,255,255])
 
-            T_mps_gp_aria.append(np.linalg.inv(T_mps_world_gp) @ T_mps_world_aria)
+            # Transformation from aria to gp in MPS coordinate system at current timestamp
+            curr_ts_T = np.linalg.inv(T_mps_world_gp) @ T_mps_world_aria
+            T_mps_gp_aria.append(curr_ts_T.tolist())
 
     # TODO: a better way of choosing
-    return T_mps_gp_aria[0]
+    return T_mps_gp_aria
+
+
+def proj_cam_pos_on_exo(args, T_mps_metashape):
+# read metashape cam pose
+    metashape_output_pth = os.path.join(args.work_dir, capture_name, 'Metashape')
+    cam_pose_metashape = {}
+    for tgt_name in ['playing_aria', 'playing_gopro']:
+        cam_pose_metashape[tgt_name] = load_metashape_cam_pose(os.path.join(metashape_output_pth, args.take), tgt_name)
+
+    # read exo camera pose in MPS from gopro_calibs.csv
+    gopro_calib_path = os.path.join(args.vrs_folder, '../trajectory/gopro_calibs.csv')
+    assert os.path.exists(gopro_calib_path), f"{gopro_calib_path} doesn't exist. Please check if trajectory data is downloaded."
+    calib_df = pd.read_csv(gopro_calib_path)
+    exo_gp_calib = calib_df.loc[calib_df['cam_uid'] == args.exo_cam]
+    # Intrinsics
+    intri_index = [f"intrinsics_{idx}" for idx in range(8)]
+    gp_camera_params = exo_gp_calib[intri_index].values.flatten().tolist()
+    # Extrinsics
+    extri_index = ['tx_world_cam','ty_world_cam','tz_world_cam','qx_world_cam','qy_world_cam','qz_world_cam','qw_world_cam']
+    T_gp_world_cam = exo_gp_calib[extri_index].values.flatten().tolist()
+
+    R_gp_world_cam = Rotation.from_quat(T_gp_world_cam[3:]).as_matrix()
+    T_gp_world_cam_matrix = transform_from_rotm_tr(R_gp_world_cam, T_gp_world_cam[:3])
+    gp_camera_intrinsics_projection = calibration.CameraProjection(calibration.CameraModelType.KANNALA_BRANDT_K3,
+                                                                       gp_camera_params)
+
+    # project camera center
+    gp01_image_dir = os.path.join(args.work_dir, capture_name, TAKE, f"vis_exo-playing-{args.exo_cam}/original_img")
+    vis_folder = os.path.join(os.path.dirname(gp01_image_dir), f'{args.exo_cam}_vis')
+    os.makedirs(vis_folder, exist_ok=True)
+    print(f"Saving visualization of aria+gp position in MPS projected onto {args.exo_cam}")
+    for file in tqdm(sorted(os.listdir(gp01_image_dir))):
+        im = cv2.imread(os.path.join(gp01_image_dir, file))
+
+        # project camera locations location
+        for camera_name, c in zip(['playing_aria', 'playing_gopro'], [(0,0,255), (255,0,0)]):
+            if file in cam_pose_metashape[camera_name]['cam_pose'].keys():
+                point_metashape = (cam_pose_metashape[camera_name]['cam_pose'][file] @ np.array([0, 0, 0, 1])) # T_world_camera * [0,0,0,1]
+                point_mps_world = T_mps_metashape @ point_metashape
+                point_mps_gp01 = np.linalg.inv(T_gp_world_cam_matrix) @ point_mps_world
+                point_2D_gp01 = gp_camera_intrinsics_projection.project(point_mps_gp01[:3])
+                im = cv2.circle(im, (int(point_2D_gp01[0]), int(point_2D_gp01[1])), 10, c, -1)
+
+        cv2.imwrite(os.path.join(vis_folder, file), im)
 
 
 if __name__ == '__main__':
     ######################################
-    TAKE = None # MODIFY e.g. "upenn_0718_Violin_2_5"
+    all_take = [None] # MODIFY e.g. "upenn_0718_Violin_2_5"
+    visualize_exo_check = False
     ######################################
 
-    args = get_parameters(TAKE)
-    capture_name = '_'.join(TAKE.split('_')[:-1])
+    for TAKE in all_take:
+        args = get_parameters(TAKE)
+        capture_name = '_'.join(TAKE.split('_')[:-1])
+        transform_save_dir = os.path.join(args.work_dir, capture_name, args.take)
 
-    # fit a transformation between MPS coordinate system and Metashape coordinate system
-    T_mps_metashape = transformation_MPS_Metashape(args, visualize=False)
-    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
-    save_name = 'transformation_MPS_Metashape.json'
-    with open(os.path.join(save_dir, save_name), 'w') as f:
-        json.dump(T_mps_metashape.tolist(), f, indent=4)
+        # fit a transformation between MPS coordinate system and Metashape coordinate system
+        T_mps_metashape_save_name = 'transformation_MPS_Metashape.json'
+        if not os.path.exists(os.path.join(transform_save_dir, T_mps_metashape_save_name)):
+            T_mps_metashape = transformation_MPS_Metashape(args, visualize_cam_pose=False)
+            with open(os.path.join(transform_save_dir, T_mps_metashape_save_name), 'w') as f:
+                json.dump(T_mps_metashape.tolist(), f, indent=4)
 
-    # fit a transformation between dynamic gopro and aria rgb in mps coordinate system
-    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
-    save_name = 'transformation_MPS_Metashape.json'
-    with open(os.path.join(save_dir, save_name), 'r') as f:
-        T_mps_metashape = np.array(json.load(f))
+        # Project aria and gp position onto exo camera for verification
+        if visualize_exo_check:
+            T_mps_metashape_save_name = 'transformation_MPS_Metashape.json'
+            with open(os.path.join(transform_save_dir, T_mps_metashape_save_name), 'r') as f:
+                T_mps_metashape = np.array(json.load(f))
+            proj_cam_pos_on_exo(args, T_mps_metashape)
 
-    T_mps_gp_aria = transformation_MPS_gp_aria(args, T_mps_metashape)
-    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
-    save_name = 'transformation_MPS_gp_aria.json'
-    with open(os.path.join(save_dir, save_name), 'w') as f:
-        json.dump(T_mps_gp_aria.tolist(), f, indent=4)
+        # fit a transformation between dynamic gopro and aria rgb in mps coordinate system
+        T_mps_metashape_save_name = 'transformation_MPS_Metashape.json'
+        with open(os.path.join(transform_save_dir, T_mps_metashape_save_name), 'r') as f:
+            T_mps_metashape = np.array(json.load(f))
+        T_mps_gp_aria = transformation_MPS_gp_aria(args, T_mps_metashape)
+        T_mps_gp_aria_save_name = 'transformation_MPS_gp_aria_allIdx.json'
+        with open(os.path.join(transform_save_dir, T_mps_gp_aria_save_name), 'w') as f:
+            json.dump(T_mps_gp_aria, f, indent=4)

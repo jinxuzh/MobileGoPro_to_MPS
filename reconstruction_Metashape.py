@@ -52,6 +52,7 @@ def get_parameters(take_name):
 
     args.video_folder = os.path.join(args.base_folder, 'takes', take_name, 'frame_aligned_videos')
     args.vrs_folder = os.path.join(args.base_folder, 'captures', take_name[:-2], 'videos')
+    args.take = take_name
 
     return args
 
@@ -136,56 +137,64 @@ def save_cam_pose(camera_name, label_flag, chunk, save_dir):
 
 if __name__ == '__main__':
     ######################################
-    TAKE = None # MODIFY e.g. "upenn_0718_Violin_2_5"
+    all_take = [None] # MODIFY e.g. "upenn_0718_Violin_2_5"
     ######################################
 
-    args = get_parameters(TAKE)
-    capture_name = '_'.join(TAKE.split('_')[:-1])
+    for TAKE in all_take:
+        args = get_parameters(TAKE)
+        capture_name = '_'.join(TAKE.split('_')[:-1])
 
-    save_dir = os.path.join(args.work_dir, capture_name, TAKE, 'outputs', 'Metashape')
-    os.makedirs(save_dir, exist_ok=True)
-    save_name = '{}.psx'.format(TAKE)
-    save_file = os.path.join(save_dir, save_name)
+        world_save_dir = os.path.join(args.work_dir, capture_name, 'Metashape')
+        os.makedirs(world_save_dir, exist_ok=True)
+        take_save_dir = os.path.join(world_save_dir, args.take)
+        os.makedirs(take_save_dir, exist_ok=True)
+        
+        save_name = '{}.psx'.format(capture_name)
+        capture_world_file = os.path.join(world_save_dir, save_name)
 
-    ################# Build 3D world from gopro walkaround #################
-    gp_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'gp_walkaround')
-    assert os.path.exists(gp_mobile_image_dir), gp_mobile_image_dir
-    gp_mobile_calib_file = os.path.join(args.calib_dir, '{}.xml'.format(args.mobile_cam))
-    assert os.path.exists(gp_mobile_calib_file), gp_mobile_calib_file
+        ################# Build 3D world from gopro walkaround #################
+        if not os.path.exists(capture_world_file):
+            gp_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'gp_walkaround')
+            assert os.path.exists(gp_mobile_image_dir), gp_mobile_image_dir
+            gp_mobile_calib_file = os.path.join(args.calib_dir, '{}.xml'.format(args.mobile_cam))
+            assert os.path.exists(gp_mobile_calib_file), gp_mobile_calib_file
 
-    doc = Metashape.Document()
-    reconstruction(doc, gp_mobile_image_dir, gp_mobile_calib_file, save_dir, save_name,
-                   sensor_label='mobile_gp', image_prefix=None, fix_calib=False, save_calib=True, save_campose=False, build_world=True)
+            doc = Metashape.Document()
+            reconstruction(doc, gp_mobile_image_dir, gp_mobile_calib_file, world_save_dir, save_name,
+                        sensor_label='mobile_gp', image_prefix=None, fix_calib=False, save_calib=True, save_campose=False, build_world=True)
 
-    ################# Register walkarond aria frames and calibrate aria camera #################
-    aria_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'aria_images', 'aria_walkaround')
-    assert os.path.exists(aria_mobile_image_dir), aria_mobile_image_dir
-    aria_mobile_calib_file = os.path.join(args.calib_dir, 'aria01_new.xml')
-    assert os.path.exists(aria_mobile_calib_file), aria_mobile_calib_file
+        ################# Register walkaround aria frames and calibrate aria camera #################
+        aria_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'aria_walkaround', 'aria_walkaround')
+        assert os.path.exists(aria_mobile_image_dir), aria_mobile_image_dir
+        aria_mobile_calib_file = os.path.join(args.calib_dir, 'aria01_new.xml')
+        assert os.path.exists(aria_mobile_calib_file), aria_mobile_calib_file
 
-    doc = Metashape.Document()
-    doc.open(save_file)
-    reconstruction(doc, aria_mobile_image_dir, aria_mobile_calib_file, save_dir, save_name,
-                   sensor_label='walkaround_aria', image_prefix='214-1', fix_calib=False, save_calib=True, save_campose=True)
+        if not os.path.exists(os.path.join(world_save_dir, 'walkaround_aria.xml')) or \
+            not os.path.exists(os.path.join(world_save_dir, 'walkaround_aria_cam_pose.txt')) or \
+            not os.path.exists(os.path.join(world_save_dir, 'walkaround_aria_im_name.txt')):
+            doc = Metashape.Document()
+            doc.open(capture_world_file)
+            reconstruction(doc, aria_mobile_image_dir, aria_mobile_calib_file, world_save_dir, save_name,
+                        sensor_label='walkaround_aria', image_prefix='214-1', fix_calib=False, save_calib=True, save_campose=True)
 
-    ################# Register aria playing frames #################
-    aria_playing_image_dir = os.path.join(args.work_dir, capture_name, TAKE, 'playing_aria')
-    assert os.path.exists(aria_playing_image_dir), aria_playing_image_dir
-    aria_playing_calib_file = os.path.join(save_dir, 'walkaround_aria.xml')
-    assert os.path.exists(aria_playing_calib_file), aria_playing_calib_file
+        ################# Register aria playing frames #################
+        aria_playing_image_dir = os.path.join(args.work_dir, capture_name, TAKE, 'playing_aria')
+        assert os.path.exists(aria_playing_image_dir), aria_playing_image_dir
+        aria_playing_calib_file = os.path.join(world_save_dir, 'walkaround_aria.xml')
+        assert os.path.exists(aria_playing_calib_file), aria_playing_calib_file
 
-    doc = Metashape.Document()
-    doc.open(save_file)
-    reconstruction(doc, aria_playing_image_dir, aria_playing_calib_file, save_dir, save_name,
-                   sensor_label='playing_aria', image_prefix='playing_aria', fix_calib=True, save_calib=False, save_campose=True)
+        doc = Metashape.Document()
+        doc.open(capture_world_file)
+        reconstruction(doc, aria_playing_image_dir, aria_playing_calib_file, take_save_dir, save_name,
+                    sensor_label='playing_aria', image_prefix='playing_aria', fix_calib=True, save_calib=False, save_campose=True)
 
-    ################# Register gp playing frames #################
-    gp_playing_image_dir = os.path.join(args.work_dir, capture_name, TAKE, 'playing_gopro')
-    assert os.path.exists(gp_playing_image_dir), gp_playing_image_dir
-    gp_playing_calib_file = os.path.join(save_dir, 'mobile_gp.xml')
-    assert os.path.exists(gp_playing_calib_file), gp_playing_calib_file
+        ################# Register gp playing frames #################
+        gp_playing_image_dir = os.path.join(args.work_dir, capture_name, TAKE, 'playing_gopro')
+        assert os.path.exists(gp_playing_image_dir), gp_playing_image_dir
+        gp_playing_calib_file = os.path.join(world_save_dir, 'mobile_gp.xml')
+        assert os.path.exists(gp_playing_calib_file), gp_playing_calib_file
 
-    doc = Metashape.Document()
-    doc.open(save_file)
-    reconstruction(doc, gp_playing_image_dir, gp_playing_calib_file, save_dir, save_name,
-                   sensor_label='playing_gopro', image_prefix='playing_gopro', fix_calib=True, save_calib=False, save_campose=True)
+        doc = Metashape.Document()
+        doc.open(capture_world_file)
+        reconstruction(doc, gp_playing_image_dir, gp_playing_calib_file, take_save_dir, save_name,
+                    sensor_label='playing_gopro', image_prefix='playing_gopro', fix_calib=True, save_calib=False, save_campose=True)

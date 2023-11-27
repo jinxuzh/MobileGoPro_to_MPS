@@ -26,16 +26,17 @@ if __name__ == '__main__':
     # TODO: find a way to extract just part of the vrs
     print(f'{"="*20} Extracting raw aria images {"="*20}')
     vrs_file = os.path.join(args.vrs_folder, 'aria01.vrs')
-    vrs_image_folder = os.path.join(args.work_dir, capture_name, 'aria_images', 'raw_aria_images')
+    vrs_image_folder = os.path.join(args.work_dir, capture_name, 'aria_walkaround', 'raw_aria_images')
     os.makedirs(vrs_image_folder, exist_ok=True)
     cmd = 'vrs extract-images {} --to {} + 214-1'.format(vrs_file, vrs_image_folder)
     os.system(cmd)
     
     # move a subset to take folder
     print(f'{"="*20} Moving raw aria images {"="*20}')
-    start_frame = args.aria_walkaround_start_frame
-    end_frame = args.aria_walkaround_end_frame
-    sub_img_list = sorted(os.listdir(vrs_image_folder))[start_frame:end_frame][::10]
+    start_frame = 1300  # Modify
+    end_frame = 4000    # Modify
+    interval = 10       # Modify
+    sub_img_list = sorted(os.listdir(vrs_image_folder))[start_frame:end_frame][::interval]
     aria_mobile_image_dir = os.path.join(args.work_dir, capture_name, 'aria_images', 'aria_walkaround')
     os.makedirs(aria_mobile_image_dir, exist_ok=True)
     for img_file in tqdm(sub_img_list):
