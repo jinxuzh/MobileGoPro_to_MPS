@@ -6,12 +6,13 @@ def get_parameters(take_name):
     parser = argparse.ArgumentParser('Register mobile gopro to aria MPS coordinate system')
 
     # path
+    parser.add_argument('--take', type=str, default=take_name)
     parser.add_argument('--base_folder', type=str, default='/mnt/volume2/Data/Ego4D')
     parser.add_argument('--annotation_folder', type=str, default='/mnt/volume2/Data/Ego4D/annotations/ego_pose/hand')
-    parser.add_argument('--annotation_im_folder', type=str, default='/mnt/volume2/Data/Ego4D/aria_undistorted_images/annotation')
-    parser.add_argument('--calib_dir', type=str, default='/mnt/8tbvol11/register_mobileGoPro_Ego4D/calib_files',
+    parser.add_argument('--annotation_im_folder', type=str, default='/mnt/volume2/Data/Ego4D/aria_undistorted_images')
+    parser.add_argument('--calib_dir', type=str, default='/mnt/volume2/Data/Ego4D/register_mobileGoPro_Ego4D/calib_files',
                         help="folder for calibration files")
-    parser.add_argument('--work_dir', type=str, default='/mnt/8tbvol11/register_mobileGoPro_Ego4D')
+    parser.add_argument('--work_dir', type=str, default='/mnt/volume2/Data/Ego4D/register_mobileGoPro_Ego4D')
 
     # image resolution
     parser.add_argument('--mobile_width', type=int, default=1920,
@@ -50,7 +51,7 @@ def get_parameters(take_name):
     args = parser.parse_args()
 
     args.video_folder = os.path.join(args.base_folder, 'takes', take_name, 'frame_aligned_videos')
-    args.vrs_folder = os.path.join(args.base_folder, 'captures', take_name[:-2], 'videos')
-    args.take = take_name
+    capture_name = '_'.join(take_name.split('_')[:-1])
+    args.vrs_folder = os.path.join(args.base_folder, 'captures', capture_name, 'videos')
 
     return args
