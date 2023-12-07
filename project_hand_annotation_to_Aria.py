@@ -45,12 +45,9 @@ if __name__ == '__main__':
 
     # Load transformation from aria to gp
     transform_save_dir = os.path.join(args.work_dir, capture_name, args.take)
-    T_mps_gp_aria_save_name = 'transformation_MPS_gp_aria_allIdx.json'
-    with open(os.path.join(transform_save_dir, T_mps_gp_aria_save_name), 'r') as f:
+    with open(os.path.join(transform_save_dir, 'transformation_MPS_gp_aria_best.json'), 'r') as f:
         T_mps_gp_aria = np.array(json.load(f))
-    selected_gp_aria_T_idx = 0 # TODO: Choose based on criterion e.g. transformation with least projection error.
-    T_mps_gp_aria = T_mps_gp_aria[selected_gp_aria_T_idx]
-        
+
     # Create directory to store projected hand annotation on Aria and GoPro
     aria_playing_vis_dir = os.path.join(transform_save_dir, 'hand_anno_check/aria')
     os.makedirs(aria_playing_vis_dir, exist_ok=True)

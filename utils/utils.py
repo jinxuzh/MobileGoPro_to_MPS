@@ -8,6 +8,8 @@ from tqdm import tqdm
 from torchaudio.io import StreamReader
 from torchvision.transforms import Resize
 from typing import Optional
+import xml.etree.ElementTree as ET
+from .visualization_rerun import right_hand, left_hand
 
 
 def decode_video_to_images(video_path, image_dir, im_width, im_height, framerate, prefix=None, subclip_frame_num=None):
@@ -209,6 +211,70 @@ def get_video_meta(path):
             "tb": tb,
         }
     
+
+def load_metashape_calib(calib_path):
+    """
+    Load camera calibration (intrinsic + distortion parameter) 
+    from Metahape output.
+    """
+    tree = ET.parse(calib_path)
+    root = tree.getroot()
+    gp_calib = {}
+    for i in range(1,len(root)-1):
+        gp_calib[root[i].tag] = float(root[i].text)
+    K_gp05 = [[gp_calib['f'], 0, gp_calib['width']/2 + gp_calib['cx']],
+                [0, gp_calib['f'], gp_calib['height']/2 + gp_calib['cy']],
+                [0, 0, 1]]
+    D_gp05 = [gp_calib['k1'], gp_calib['k2'], gp_calib['k3'], 0]
+    return K_gp05, D_gp05
+
+
+def load_hand_pose_anno(curr_frame_anno, T_mps_aria_world, T_mps_gp_aria, K, D):
+    hand_3D = np.zeros((42, 5))  # x, y, z, 1, valid
+    BOTH_HAND = right_hand + left_hand # right first, then left
+    for idx, joint in enumerate(BOTH_HAND):
+        if joint in curr_frame_anno[0]['annotation3D'].keys():
+            hand_3D[idx, 0] = curr_frame_anno[0]['annotation3D'][joint]['x']
+            hand_3D[idx, 1] = curr_frame_anno[0]['annotation3D'][joint]['y']
+            hand_3D[idx, 2] = curr_frame_anno[0]['annotation3D'][joint]['z']
+            hand_3D[idx, 3] = 1
+            hand_3D[idx, 4] = 1
+
+    T_mps_aria_world = np.concatenate([T_mps_aria_world, np.array([[0, 0, 0, 1]])])
+    hand_3D_repro = T_mps_gp_aria[:3, :] @ T_mps_aria_world @ hand_3D[:, :4].T
+    hand_3D_repro = hand_3D_repro[:2, :].T / hand_3D_repro[2:, :].T
+    hand_3D_repro_distort = cv2.fisheye.distortPoints(np.expand_dims(hand_3D_repro, axis=1), 
+                                                      np.array(K),
+                                                      np.array(D))
+    hand_3D_repro_distort = np.nan_to_num(hand_3D_repro_distort)
+    return hand_3D_repro_distort.squeeze()
+
+
+def get_bbox_from_kpts(kpts, img_shape, padding=30):
+    img_H, img_W = img_shape[:2]
+    # Filter invalid kpts and return None if less than 5 valid kpts exists
+    valid_flag = (kpts[:,0] > 0) & (kpts[:,0] < img_W) & (kpts[:,1] > 0) & (kpts[:,1] < img_H)
+    if np.sum(valid_flag) < 10:
+        return [0,0,0,0], None
+    
+    kpts = kpts[valid_flag]
+    # Get proposed hand bounding box from hand keypoints
+    x1, y1, x2, y2 = (
+        kpts[:, 0].min(),
+        kpts[:, 1].min(),
+        kpts[:, 0].max(),
+        kpts[:, 1].max(),
+    )
+    # Proposed hand bounding box with padding
+    bbox_x1, bbox_y1, bbox_x2, bbox_y2 = (
+        np.clip(x1 - padding, 0, img_W - 1),
+        np.clip(y1 - padding, 0, img_H - 1),
+        np.clip(x2 + padding, 0, img_W - 1),
+        np.clip(y2 + padding, 0, img_H - 1),
+    )
+    # Return bbox result
+    return np.array([bbox_x1, bbox_y1, bbox_x2, bbox_y2]).astype(np.int64), valid_flag
+
 
 class StridedReader:
     def __init__(self, path, stride, frame_window_size):

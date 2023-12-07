@@ -250,20 +250,20 @@ if __name__ == '__main__':
         with open(os.path.join(mps_meta_transform_save_dir, T_mps_metashape_save_name), 'w') as f:
             json.dump(T_mps_metashape.tolist(), f, indent=4)
 
-        # Project aria and gp position onto exo camera for verification
-        if visualize_exo_check:
-            T_mps_metashape_save_name = 'transformation_MPS_Metashape.json'
-            with open(os.path.join(mps_meta_transform_save_dir, T_mps_metashape_save_name), 'r') as f:
-                T_mps_metashape = np.array(json.load(f))
-            proj_cam_pos_on_exo(args, T_mps_metashape)
-
-        # fit a transformation between dynamic gopro and aria rgb in mps coordinate system
+    # Project aria and gp position onto exo camera for verification
+    if visualize_exo_check:
         T_mps_metashape_save_name = 'transformation_MPS_Metashape.json'
         with open(os.path.join(mps_meta_transform_save_dir, T_mps_metashape_save_name), 'r') as f:
             T_mps_metashape = np.array(json.load(f))
+        proj_cam_pos_on_exo(args, T_mps_metashape)
 
-        T_mps_gp_aria_save_name = 'transformation_MPS_gp_aria_allIdx.json'
-        if not os.path.exists(os.path.join(mps_meta_transform_save_dir, args.take, T_mps_gp_aria_save_name)):
-            T_mps_gp_aria = transformation_MPS_gp_aria(args, T_mps_metashape)
-            with open(os.path.join(mps_meta_transform_save_dir, args.take, T_mps_gp_aria_save_name), 'w') as f:
-                json.dump(T_mps_gp_aria, f, indent=4)
+    # fit a transformation between dynamic gopro and aria rgb in mps coordinate system
+    T_mps_metashape_save_name = 'transformation_MPS_Metashape.json'
+    with open(os.path.join(mps_meta_transform_save_dir, T_mps_metashape_save_name), 'r') as f:
+        T_mps_metashape = np.array(json.load(f))
+
+    T_mps_gp_aria_save_name = 'transformation_MPS_gp_aria_allIdx.json'
+    if not os.path.exists(os.path.join(mps_meta_transform_save_dir, args.take, T_mps_gp_aria_save_name)):
+        T_mps_gp_aria = transformation_MPS_gp_aria(args, T_mps_metashape)
+        with open(os.path.join(mps_meta_transform_save_dir, args.take, T_mps_gp_aria_save_name), 'w') as f:
+            json.dump(T_mps_gp_aria, f, indent=4)
